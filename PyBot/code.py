@@ -28,7 +28,16 @@ while True:
     while ble.connected:
         pixel.fill((0,0,255))
         # Returns b'' if nothing was read.
-        one_byte = uart.read(6)
-        if one_byte:
-            print(one_byte)
-            uart.write(one_byte)
+        packet = uart.read(13).decode("utf-8") 
+        if packet:
+            print(packet)
+            # print(type(packet))
+            a_x = int(packet[0:4])
+            a_y = int(packet[4:8])
+            a = int(packet[8:9])
+            b = int(packet[9:10])
+            x = int(packet[10:11])
+            y = int(packet[11:12])
+            sel = int(packet[12:13])
+            # print(a_y)
+            # uart.write(one_byte)

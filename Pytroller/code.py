@@ -3,8 +3,7 @@ import board
 import neopixel
 
 pixel = neopixel.NeoPixel(board.NEOPIXEL, 1, brightness=0.1)
-pixel.fill((255,45,45))
-
+pixel.fill((0,255,0)) 
 
 # Bluetooth Setup
 from adafruit_ble import BLERadio
@@ -55,11 +54,11 @@ def read_buttons():
     state = {
         'a_x': last_x,
         'a_y': last_y,
-        'a': False,
-        'b': False,
-        'x': False,
-        'y': False,
-        'sel': False
+        'a': 0,
+        'b': 0,
+        'x': 0,
+        'y': 0,
+        'sel': 0
     }
 
     x = ss.analog_read(2)
@@ -75,23 +74,23 @@ def read_buttons():
     buttons = ss.digital_read_bulk(button_mask)
     if not buttons & (1 << BUTTON_RIGHT):
         print("Button A pressed")
-        state['a'] = True
+        state['a'] = 1
  
     if not buttons & (1 << BUTTON_DOWN):
         print("Button B pressed")
-        state['b'] = True
+        state['b'] = 1
  
     if not buttons & (1 << BUTTON_LEFT):
         print("Button Y pressed")
-        state['y'] = True
+        state['y'] = 1
  
     if not buttons & (1 << BUTTON_UP):
         print("Button X pressed")
-        state['x'] = True
+        state['x'] = 1
  
     if not buttons & (1 << BUTTON_SEL):
         print("Button SEL pressed")
-        state['sel'] = True
+        state['sel'] = 1
     
     return state
 
@@ -114,6 +113,7 @@ while True:
         print("Scanning...")
         for adv in ble.start_scan(ProvideServicesAdvertisement, timeout=5):
             if UARTService in adv.services:
+                pixel.fill((0,255,255))
                 print("found a UARTService advertisement")
                 uart_connection = ble.connect(adv)
                 break
@@ -122,12 +122,16 @@ while True:
 
     while uart_connection and uart_connection.connected:
         try:
-            controller_state = read_buttons()
-            uart_connection[UARTService].write("heh")
+            pixel.fill((0,0,255))
+            c = read_buttons()
+            print(c)
+            spam = f"{c['a_x']:04}" + f"{c['a_y']:04}"
+            spam = spam + f"{c['a']}{c['b']}{c['x']}{c['y']}{c['sel']}"
+            uart_connection[UARTService].write(spam)
         except OSError:
             try:
                 uart_connection.disconnect()
             except:  # pylint: disable=bare-except
                 pass
             uart_connection = None
-        time.sleep(0.3)
+        # time.sleep(0.3)
