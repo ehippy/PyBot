@@ -1,4 +1,3 @@
-  
 # SPDX-FileCopyrightText: 2020 ladyada for Adafruit Industries
 # SPDX-License-Identifier: MIT
 
@@ -106,7 +105,7 @@ def gps_stuff():
         if not gps.has_fix:
             # Try again if we don't have a fix yet.
             # print("Waiting for GPS fix...")
-            rfm69.send("gps no fix")
+            rfm69.send("gps bad fix")
             return
         # We have a fix! (gps.has_fix is true)
         # Print out details about the fix like location, date, etc.

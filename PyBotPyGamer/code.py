@@ -8,7 +8,7 @@ display = board.DISPLAY
 # Set text, font, and color
 text = "HELLO WORLD"
 font = terminalio.FONT
-color = 0xFF00FF
+color = 0xFFFFFF
 
 # Create the text label
 text_area = label.Label(font, text=text, color=color, max_glyphs=30)
