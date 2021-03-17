@@ -55,7 +55,7 @@ reset = digitalio.DigitalInOut(board.D9)
 
 rfm69 = adafruit_rfm69.RFM69(spi, cs, reset, 915.0)
 
-rfm69.send('Hello world!')
+rfm69.send('Hello from bot!')
 print("sent RF hello world!")
 
 last_sent = ""
@@ -78,7 +78,8 @@ while True:
                 pixel_strip[0] = (255,0,0)
                 pixel_strip.show()
             # print("Received (ASCII): {0}".format(packet_text))
-            btn_area.text = packet_text
+            if packet_parts[0] != "ctl":
+                btn_area.text = packet_text
         except:
             print("paket error caught")
         

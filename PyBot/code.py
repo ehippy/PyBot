@@ -1,9 +1,14 @@
 # SPDX-FileCopyrightText: 2020 ladyada for Adafruit Industries
 # SPDX-License-Identifier: MIT
 
-"""
-Used with ble_uart_echo_client.py. Receives characters from the UARTService and transmits them back. 
-"""
+import gamblor21_ahrs
+
+DO_CALIBRATION = False 
+if DO_CALIBRATION:
+    import calibrate
+    calibrate.calibrate()
+    exit()
+
 import math
 import time
 import board
@@ -21,8 +26,33 @@ left_motor.throttle = 0
 
 
 import adafruit_lsm9ds1
+from lib.gamblor21_ahrs import mahony
 sensor = adafruit_lsm9ds1.LSM9DS1_I2C(i2c)
 current_bearing = None
+
+MAG_MIN = [-0.28602, -0.31486, -0.45374]
+MAG_MAX = [0.6475, 0.53438, 0.43498]
+
+## Used to calibrate the magenetic sensor
+def map_range(x, in_min, in_max, out_min, out_max):
+    """
+    Maps a number from one range to another.
+    :return: Returns value mapped to new range
+    :rtype: float
+    """
+    mapped = (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+    if out_min <= out_max:
+        return max(min(mapped, out_max), out_min)
+
+    return min(max(mapped, out_max), out_min)
+
+
+## create the ahrs_filter
+ahrs_filter = mahony.Mahony(50, 5, 100)
+orientation_count = 0  # used to count how often we are feeding the ahrs_filter
+orientation_lastPrint = time.monotonic()  # last time we printed the yaw/pitch/roll values
+orientation_timestamp = time.monotonic_ns()  # used to tune the frequency to approx 100 Hz
+
 
 import adafruit_gps
 gps_uart = busio.UART(board.TX, board.RX, baudrate=9600, timeout=10)
@@ -92,7 +122,7 @@ def drive_from_joystick(joy_x, joy_y):
     r_throttle = max(-1, min(r_throttle, 1))
     l_throttle = max(-1, min(l_throttle, 1))
 
-    print(f"X:{joy_x}, Y:{joy_y} => R:{r_throttle}, L:{l_throttle}")
+    # print(f"X:{joy_x}, Y:{joy_y} => R:{r_throttle}, L:{l_throttle}") # joystick control print
 
     right_motor.throttle = r_throttle
     left_motor.throttle = l_throttle
@@ -105,7 +135,7 @@ def gps_stuff():
         if not gps.has_fix:
             # Try again if we don't have a fix yet.
             # print("Waiting for GPS fix...")
-            rfm69.send("gps bad fix")
+            # rfm69.send("gps bad fix")
             return
         # We have a fix! (gps.has_fix is true)
         # Print out details about the fix like location, date, etc.
@@ -152,22 +182,71 @@ def gps_stuff():
     
 
 def orienteering_stuff():
+    global orientation_count, orientation_timestamp, orientation_lastPrint
     try:
-        # print('Acceleration (m/s^2): ({0:0.3f},{1:0.3f},{2:0.3f})'.format(*sensor.acceleration))
-        # print('Magnetometer (gauss): ({0:0.3f},{1:0.3f},{2:0.3f})'.format(*sensor.magnetic))
-        mag_x, mag_y, mag_z = sensor.magnetic
-        bearing = 0
+        # on an Feather M4 approx time to wait between readings
+        if (time.monotonic_ns() - orientation_timestamp) > 6500000:
 
-        # bearing = math.atan(mag_y/mag_x)*(180/math.pi) 
-        # if bearing < 0:
-        #     bearing = bearing + 360 
+            # read the magenetic sensor
+            mx, my, mz = sensor.magnetic
 
-        bearing = 180-math.atan2(mag_x, mag_y)/0.0174532925 
+            # adjust for magnetic calibration - hardiron only
+            # calibration varies per device and physical location
+            mx = map_range(mx, MAG_MIN[0], MAG_MAX[0], -1, 1)
+            my = map_range(my, MAG_MIN[1], MAG_MAX[1], -1, 1)
+            mz = map_range(mz, MAG_MIN[2], MAG_MAX[2], -1, 1)
 
-        # print(bearing)
-        # print('Gyroscope (degrees/sec): ({0:0.3f},{1:0.3f},{2:0.3f})'.format(*sensor.gyro))
-        # print('Temp (degrees/sec): ({0:0.3f})'.format(*sensor.temperature))
-        # print(sensor.temperature)
+            # read the gyroscope
+            gx, gy, gz = sensor.gyro
+            # adjust for my gyro calibration values
+            # calibration varies per device and physical location
+            gx -= 0.0143024
+            gy -= 0.0275528
+            gz += 0.0213714
+
+            # read the accelerometer
+            ax, ay, az = sensor.acceleration
+
+            # update the ahrs_filter with the values
+            # gz and my are negative based on my installation
+            ahrs_filter.update(gx, gy, -gz, ax, ay, az, mx, -my, mz)
+
+            orientation_count += 1
+            orientation_timestamp = time.monotonic_ns()
+
+        # every 0.1 seconds print the ahrs_filter values
+        if time.monotonic() > orientation_lastPrint + 0.1:
+            # ahrs_filter values are in radians/sec multiply by 57.20578 to get degrees/sec
+            yaw = ahrs_filter.yaw * 57.20578
+            if yaw < 0:  # adjust yaw to be between 0 and 360
+                yaw += 360
+
+            current_bearing = yaw
+            rfm69.send(f"head,{current_bearing}")
+            
+            print(
+                "Orientation: ",
+                yaw,
+                ", ",
+                ahrs_filter.pitch * 57.29578,
+                ", ",
+                ahrs_filter.roll * 57.29578,
+            )
+            # print(
+            #     "Quaternion: ",
+            #     ahrs_filter.q0,
+            #     ", ",
+            #     ahrs_filter.q1,
+            #     ", ",
+            #     ahrs_filter.q2,
+            #     ", ",
+            #     ahrs_filter.q3,
+            # )
+
+            # print("Count: ", count)    # optionally print out frequency
+            orientation_count = 0  # reset count
+            orientation_lastPrint = time.monotonic()
+
     except Exception as e:
         # print(dir(sensor))
         print('orienteering broke', e)
