@@ -77,6 +77,8 @@ pixel = neopixel.NeoPixel(board.NEOPIXEL, 1, brightness=0.1)
 max_loops_without_rf_update = 10
 joystick_drive_loops_since_rf = 0
 
+drive_mode = "manual"
+
 # expected input values 0.0 to 1.0
 def drive_from_joystick(joy_x, joy_y):
     global left_motor, right_motor
@@ -133,7 +135,6 @@ def gps_stuff():
         gps.update()
 
         if not gps.has_fix:
-            # Try again if we don't have a fix yet.
             # print("Waiting for GPS fix...")
             # rfm69.send("gps bad fix")
             return
@@ -153,7 +154,6 @@ def gps_stuff():
 
         current_latitude = gps.latitude 
         current_longitude = gps.longitude
-
 
         # gps packet
         gps_packet = f"gps,{gps.latitude:.8f},{gps.longitude:.8f},{gps.fix_quality}"
@@ -251,6 +251,55 @@ def orienteering_stuff():
         # print(dir(sensor))
         print('orienteering broke', e)
 
+def calculate_initial_compass_bearing(pointA, pointB):
+    if (type(pointA) != tuple) or (type(pointB) != tuple):
+        raise TypeError("Only tuples are supported as arguments")
+
+    lat1 = math.radians(pointA[0])
+    lat2 = math.radians(pointB[0])
+
+    diffLong = math.radians(pointB[1] - pointA[1])
+
+    x = math.sin(diffLong) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - (math.sin(lat1) * math.cos(lat2) * math.cos(diffLong))
+
+    initial_bearing = math.atan2(x, y)
+    initial_bearing = math.degrees(initial_bearing)
+    compass_bearing = (initial_bearing + 360) % 360
+
+    return compass_bearing
+
+
+    def distance_on_unit_sphere(self, lat1, long1, lat2, long2):
+        # Convert latitude and longitude to
+        # spherical coordinates in radians.
+        degrees_to_radians = math.pi / 180.0
+
+        # phi = 90 - latitude
+        phi1 = (90.0 - lat1) * degrees_to_radians
+        phi2 = (90.0 - lat2) * degrees_to_radians
+
+        # theta = longitude
+        theta1 = long1 * degrees_to_radians
+        theta2 = long2 * degrees_to_radians
+
+        # Compute spherical distance from spherical coordinates.
+
+        # For two locations in spherical coordinates
+        # (1, theta, phi) and (1, theta, phi)
+        # cosine( arc length ) =
+        #    sin phi sin phi' cos(theta-theta') + cos phi cos phi'
+        # distance = rho * arc length
+
+        cos = (math.sin(phi1) * math.sin(phi2) * math.cos(theta1 - theta2) +
+               math.cos(phi1) * math.cos(phi2))
+        arc = math.acos(cos)
+
+        # Remember to multiply arc by the radius of the earth
+        # in your favorite set of units to get length.
+        return arc
+        
+
 def rf_drive():
     global max_loops_without_rf_update, joystick_drive_loops_since_rf
     try:
@@ -283,8 +332,18 @@ def rf_drive():
     except Exception as e:
         print(f"rf_drive exception: {e}")
 
+def radio_listen():
+    pass
+
+def gps_drive():
+    pass
+
 while True:
+    radio_listen()
     orienteering_stuff()
     gps_stuff()
-    rf_drive()
+    if drive_mode == "manual":
+        rf_drive()
+    if drive_mode == "gps":
+        gps_drive()
 
