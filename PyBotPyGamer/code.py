@@ -11,22 +11,32 @@ font = terminalio.FONT
 color = 0xFFFFFF
 
 # Create the text label
-text_area = label.Label(font, text=text, color=color, max_glyphs=30)
-text_area.x = 10
-text_area.y = 10
+lbl_signal = label.Label(font, text="Signal", color=color, max_glyphs=30)
+lbl_signal.x = 10
+lbl_signal.y = 10
 
-btn_area = label.Label(font, text=text, color=color, max_glyphs=30)
-btn_area.x = 10
-btn_area.y = 30
+lbl_heading = label.Label(font, text="Heading", color=color, max_glyphs=30)
+lbl_heading.x = 10
+lbl_heading.y = 30
+
+lbl_gps = label.Label(font, text="GPS", color=color, max_glyphs=30)
+lbl_gps.x = 10
+lbl_gps.y = 50
+
+lbl_mode = label.Label(font, text="Mode", color=color, max_glyphs=30)
+lbl_mode.x = 10
+lbl_mode.y = 70
 
 # Show it
 
-homescreen_screen = displayio.Group(max_size=3)
-homescreen_screen.append(text_area)
-homescreen_screen.append(btn_area)
+homescreen_screen = displayio.Group(max_size=10)
+homescreen_screen.append(lbl_signal)
+homescreen_screen.append(lbl_heading)
+homescreen_screen.append(lbl_gps)
+homescreen_screen.append(lbl_mode)
 
 display.show(homescreen_screen)
-# display.show(btn_area)
+# display.show(lbl_heading)
 
 import time
 import analogio
@@ -60,11 +70,35 @@ print("sent RF hello world!")
 
 last_sent = ""
 
+
+MODE_JOYSTICK = "joystick"
+MODE_GPS = "gps"
+MODE_CHANGING = "changing"
+drive_mode = MODE_JOYSTICK
+rfm69.send("mode," + drive_mode)
+
 import neopixel
 pixel_strip = neopixel.NeoPixel(board.D8, 5, brightness=0.1) 
 # pixel_strip.fill((34,56,87))
 
+def handle_gps_packet(packet_parts):
+    if packet_parts[1] == "bad":
+        lbl_gps.text = "GPS no fix"
+        pixel_strip[0] = (255,0,0)
+        pixel_strip.show()
+    else:
+        lbl_gps.text = "GPS good fix"
+        pixel_strip[0] = (0,255,0)
+        pixel_strip.show()
+
+
+def handle_heading_packet(packet_parts):
+    lbl_heading.text = "Heading: " + packet_parts[1]
+
+mode_changing = False
+
 while True:
+    lbl_mode.text = "Mode: " + drive_mode
     packet = rfm69.receive(timeout=0.05) # 1/10 second
     # If no packet was received during the timeout then None is returned.
     if packet is None:
@@ -74,21 +108,27 @@ while True:
             packet_text = str(packet, 'ascii', 'ignore')
             # print(packet_text)
             packet_parts = packet_text.split(",")
-            if packet_text == "gps no fix":
-                pixel_strip[0] = (255,0,0)
-                pixel_strip.show()
             # print("Received (ASCII): {0}".format(packet_text))
-            if packet_parts[0] != "ctl":
-                btn_area.text = packet_text
-        except:
-            print("paket error caught")
+            
+            if packet_parts[0] == "gps":
+                handle_gps_packet(packet_parts)
+
+            if packet_parts[0] == "head":
+                handle_heading_packet(packet_parts)
+
+            if packet_parts[0] == "gotmode":
+                drive_mode = packet_parts[1]
+                print("gotmode hit")
+
+        except Exception as e:
+            print("paket error caught " + e)
         
 
     try:
         x = joystick_x.value/65535
         y = joystick_y.value/65535
-        # text_area.text = f"Stick: {x:0.0}, {y:0.0}"
-        text_area.text = f"Signal: {rfm69.rssi}"
+        # lbl_signal.text = f"Stick: {x:0.0}, {y:0.0}"
+        lbl_signal.text = f"Signal: {rfm69.rssi}"
         
         pressed = pad.get_pressed()
 
@@ -97,7 +137,7 @@ while True:
         start_btn = (pressed & (1<<2)) != 0 
         select_btn = (pressed & (1<<3)) != 0 
 
-        # btn_area.text = f"A: {a_btn}, B: {b_btn}"
+        # lbl_heading.text = f"A: {a_btn}, B: {b_btn}"
 
         spam = "ctl,"
         spam += f"{x:.2f}," + f"{y:.2f}"
@@ -106,6 +146,15 @@ while True:
             rfm69.send(spam)
             last_sent = spam
             # print("Sent " + spam)
+        
+        if select_btn: #  and drive_mode != MODE_CHANGING
+            if drive_mode == MODE_JOYSTICK:
+                new_mode = MODE_GPS
+            else:
+                new_mode = MODE_JOYSTICK
+            
+            rfm69.send("mode," + new_mode)
+            drive_mode = MODE_CHANGING
         
     except Exception as e:
         print("fucking problem", e)

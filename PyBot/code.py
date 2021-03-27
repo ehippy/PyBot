@@ -77,7 +77,10 @@ pixel = neopixel.NeoPixel(board.NEOPIXEL, 1, brightness=0.1)
 max_loops_without_rf_update = 10
 joystick_drive_loops_since_rf = 0
 
-drive_mode = "manual"
+MODE_JOYSTICK = "joystick"
+MODE_GPS = "gps"
+
+drive_mode = MODE_JOYSTICK
 
 # expected input values 0.0 to 1.0
 def drive_from_joystick(joy_x, joy_y):
@@ -136,7 +139,7 @@ def gps_stuff():
 
         if not gps.has_fix:
             # print("Waiting for GPS fix...")
-            # rfm69.send("gps bad fix")
+            rfm69.send("gps,bad")
             return
         # We have a fix! (gps.has_fix is true)
         # Print out details about the fix like location, date, etc.
@@ -157,7 +160,7 @@ def gps_stuff():
 
         # gps packet
         gps_packet = f"gps,{gps.latitude:.8f},{gps.longitude:.8f},{gps.fix_quality}"
-        print(gps_packet)
+        # print(gps_packet)
         rfm69.send(gps_packet)
 
         # print("Longitude: {0:.6f} degrees".format(gps.longitude))
@@ -224,14 +227,14 @@ def orienteering_stuff():
             current_bearing = yaw
             rfm69.send(f"head,{current_bearing}")
             
-            print(
-                "Orientation: ",
-                yaw,
-                ", ",
-                ahrs_filter.pitch * 57.29578,
-                ", ",
-                ahrs_filter.roll * 57.29578,
-            )
+            # print(
+            #     "Orientation: ",
+            #     yaw,
+            #     ", ",
+            #     ahrs_filter.pitch * 57.29578,
+            #     ", ",
+            #     ahrs_filter.roll * 57.29578,
+            # )
             # print(
             #     "Quaternion: ",
             #     ahrs_filter.q0,
@@ -300,41 +303,41 @@ def distance_on_unit_sphere(lat1, long1, lat2, long2):
     return arc * 20925524.928 # earth radius in feet
         
 
-def rf_drive():
-    global max_loops_without_rf_update, joystick_drive_loops_since_rf
+def rf_drive(parts):
+    global joystick_drive_loops_since_rf
+    a_x = float(parts[1])
+    a_y = float(parts[2])
+    # a = int(packet[8:9])
+    # b = int(packet[9:10])
+    # x = int(packet[10:11])
+    # y = int(packet[11:12])
+    # sel = int(packet[12:13])
+    pixel.fill((0,a_x*65000,a_y*65000))
+    drive_from_joystick(a_x,a_y)
+    joystick_drive_loops_since_rf = 0 
+
+
+def radio_listen():
+    global max_loops_without_rf_update
     try:
-        
         packet = rfm69.receive(timeout=0.05) # 1/20 second
         if packet is not None:
             packet_text = str(packet, "ascii")
             # print("Received (ASCII): {0}".format(packet_text))
             parts = packet_text.split(",")
             if parts[0] == "ctl":
-                a_x = float(parts[1])
-                a_y = float(parts[2])
-                # a = int(packet[8:9])
-                # b = int(packet[9:10])
-                # x = int(packet[10:11])
-                # y = int(packet[11:12])
-                # sel = int(packet[12:13])
-                pixel.fill((0,a_x*65000,a_y*65000))
-                drive_from_joystick(a_x,a_y)
-                joystick_drive_loops_since_rf = 0 
-        else:
-            joystick_drive_loops_since_rf += 1
+                rf_drive(parts)
+            if parts[0] == "mode":
+                drive_mode = parts[1]
+                print("got mode: " + drive_mode)
+                rfm69.send(f"gotmode,{drive_mode}")
+                print("sent gotmode")
 
-        # loss-of-signal kill switch
-        if joystick_drive_loops_since_rf > max_loops_without_rf_update:
-            print("joystick rf timeout, zeroing")
-            left_motor.throttle = 0
-            right_motor.throttle = 0
 
     except Exception as e:
-        print(f"rf_drive exception: {e}")
+        print(f"radio_listen exception: {e}")
 
-def radio_listen():
-    pass
-
+gps_target_accuracy = 5.0 # advance once withing 5 ft of target
 gps_target_index = 0
 gps_track = ( # starts in our driveway, drives straight up block, then zigzags back up the block home
     (-104.8656196422264,38.82017344546039),
@@ -355,15 +358,28 @@ def gps_drive():
     global gps_target_index
     target_coords = gps_track[gps_target_index]
     distance = distance_on_unit_sphere(current_latitude, current_longitude, target_coords[0], target_coords[1])
+
+    if distance < gps_target_accuracy:
+        gps_target_index += 1
+        target_coords = gps_track[gps_target_index]
+        distance = distance_on_unit_sphere(current_latitude, current_longitude, target_coords[0], target_coords[1])
+
     bearing_to_target = get_compass_bearing((current_latitude, current_longitude), target_coords)
     pass
+
+def joystick_drive_killswitch():
+    global joystick_drive_loops_since_rf
+    joystick_drive_loops_since_rf += 1
+    if joystick_drive_loops_since_rf > max_loops_without_rf_update:
+        print("joystick rf timeout, zeroing")
+        left_motor.throttle = 0
+        right_motor.throttle = 0
 
 while True:
     radio_listen()
     orienteering_stuff()
     gps_stuff()
-    if drive_mode == "manual":
-        rf_drive()
     if drive_mode == "gps":
         gps_drive()
 
+    joystick_drive_killswitch()
