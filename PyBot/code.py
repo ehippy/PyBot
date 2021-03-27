@@ -251,7 +251,7 @@ def orienteering_stuff():
         # print(dir(sensor))
         print('orienteering broke', e)
 
-def calculate_initial_compass_bearing(pointA, pointB):
+def get_compass_bearing(pointA, pointB):
     if (type(pointA) != tuple) or (type(pointB) != tuple):
         raise TypeError("Only tuples are supported as arguments")
 
@@ -270,34 +270,34 @@ def calculate_initial_compass_bearing(pointA, pointB):
     return compass_bearing
 
 
-    def distance_on_unit_sphere(self, lat1, long1, lat2, long2):
-        # Convert latitude and longitude to
-        # spherical coordinates in radians.
-        degrees_to_radians = math.pi / 180.0
+def distance_on_unit_sphere(lat1, long1, lat2, long2):
+    # Convert latitude and longitude to
+    # spherical coordinates in radians.
+    degrees_to_radians = math.pi / 180.0
 
-        # phi = 90 - latitude
-        phi1 = (90.0 - lat1) * degrees_to_radians
-        phi2 = (90.0 - lat2) * degrees_to_radians
+    # phi = 90 - latitude
+    phi1 = (90.0 - lat1) * degrees_to_radians
+    phi2 = (90.0 - lat2) * degrees_to_radians
 
-        # theta = longitude
-        theta1 = long1 * degrees_to_radians
-        theta2 = long2 * degrees_to_radians
+    # theta = longitude
+    theta1 = long1 * degrees_to_radians
+    theta2 = long2 * degrees_to_radians
 
-        # Compute spherical distance from spherical coordinates.
+    # Compute spherical distance from spherical coordinates.
 
-        # For two locations in spherical coordinates
-        # (1, theta, phi) and (1, theta, phi)
-        # cosine( arc length ) =
-        #    sin phi sin phi' cos(theta-theta') + cos phi cos phi'
-        # distance = rho * arc length
+    # For two locations in spherical coordinates
+    # (1, theta, phi) and (1, theta, phi)
+    # cosine( arc length ) =
+    #    sin phi sin phi' cos(theta-theta') + cos phi cos phi'
+    # distance = rho * arc length
 
-        cos = (math.sin(phi1) * math.sin(phi2) * math.cos(theta1 - theta2) +
-               math.cos(phi1) * math.cos(phi2))
-        arc = math.acos(cos)
+    cos = (math.sin(phi1) * math.sin(phi2) * math.cos(theta1 - theta2) +
+            math.cos(phi1) * math.cos(phi2))
+    arc = math.acos(cos)
 
-        # Remember to multiply arc by the radius of the earth
-        # in your favorite set of units to get length.
-        return arc
+    # Remember to multiply arc by the radius of the earth
+    # in your favorite set of units to get length.
+    return arc * 20925524.928 # earth radius in feet
         
 
 def rf_drive():
@@ -335,7 +335,27 @@ def rf_drive():
 def radio_listen():
     pass
 
+gps_target_index = 0
+gps_track = ( # starts in our driveway, drives straight up block, then zigzags back up the block home
+    (-104.8656196422264,38.82017344546039),
+    (-104.8655198774372,38.82025416399443),
+    (-104.8656000673942,38.82036386184941),
+    (-104.8656494691619,38.82049694762563),
+    (-104.8656495284854,38.8206083843953),
+    (-104.8656466903741,38.82076334214701),
+    (-104.865597350391,38.82071528104596),
+    (-104.8656989290283,38.82060985170269),
+    (-104.865587900495,38.82049905978958),
+    (-104.8656175403995,38.8202966575198),
+    (-104.8654858600097,38.82029841010031),
+    (-104.8655965762355,38.82020226244945)
+)
+
 def gps_drive():
+    global gps_target_index
+    target_coords = gps_track[gps_target_index]
+    distance = distance_on_unit_sphere(current_latitude, current_longitude, target_coords[0], target_coords[1])
+    bearing_to_target = get_compass_bearing((current_latitude, current_longitude), target_coords)
     pass
 
 while True:
