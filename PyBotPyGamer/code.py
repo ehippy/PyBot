@@ -73,9 +73,7 @@ last_sent = ""
 
 MODE_JOYSTICK = "joystick"
 MODE_GPS = "gps"
-MODE_CHANGING = "changing"
 drive_mode = MODE_JOYSTICK
-rfm69.send("mode," + drive_mode)
 
 import neopixel
 pixel_strip = neopixel.NeoPixel(board.D8, 5, brightness=0.1) 
@@ -95,10 +93,9 @@ def handle_gps_packet(packet_parts):
 def handle_heading_packet(packet_parts):
     lbl_heading.text = "Heading: " + packet_parts[1]
 
-mode_changing = False
-
+mode_change_start_time = time.monotonic()
 while True:
-    lbl_mode.text = "Mode: " + drive_mode
+
     packet = rfm69.receive(timeout=0.05) # 1/10 second
     # If no packet was received during the timeout then None is returned.
     if packet is None:
@@ -108,7 +105,7 @@ while True:
             packet_text = str(packet, 'ascii', 'ignore')
             # print(packet_text)
             packet_parts = packet_text.split(",")
-            # print("Received (ASCII): {0}".format(packet_text))
+            print("Received (ASCII): {0}".format(packet_text))
             
             if packet_parts[0] == "gps":
                 handle_gps_packet(packet_parts)
@@ -116,12 +113,8 @@ while True:
             if packet_parts[0] == "head":
                 handle_heading_packet(packet_parts)
 
-            if packet_parts[0] == "gotmode":
-                drive_mode = packet_parts[1]
-                print("gotmode hit")
-
         except Exception as e:
-            print("paket error caught " + e)
+            print("paket error caught " + str(e))
         
 
     try:
@@ -142,19 +135,29 @@ while True:
         spam = "ctl,"
         spam += f"{x:.2f}," + f"{y:.2f}"
         # spam = spam + f"{c['a']}{c['b']}{c['x']}{c['y']}{c['sel']}"
-        if last_sent != spam or True:
+        if last_sent != spam:
             rfm69.send(spam)
             last_sent = spam
             # print("Sent " + spam)
         
-        if select_btn: #  and drive_mode != MODE_CHANGING
-            if drive_mode == MODE_JOYSTICK:
-                new_mode = MODE_GPS
+        if select_btn:
+            now = time.monotonic()
+            if now - mode_change_start_time > 1: # only change modes once per second
+                mode_change_start_time = now
+                print("changing mode")
+                if drive_mode == MODE_JOYSTICK:
+                    drive_mode = MODE_GPS
+                else:
+                    drive_mode = MODE_JOYSTICK
+
+                lbl_mode.text = "Mode: " + drive_mode
+                rfm69.send("mode," + drive_mode)
+                print("sent mode")
             else:
-                new_mode = MODE_JOYSTICK
+                rfm69.send("mode," + drive_mode)
+                print("no mode change, too recent, resent mode")
             
-            rfm69.send("mode," + new_mode)
-            drive_mode = MODE_CHANGING
+            
         
     except Exception as e:
         print("fucking problem", e)

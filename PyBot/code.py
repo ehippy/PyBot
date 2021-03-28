@@ -132,14 +132,19 @@ def drive_from_joystick(joy_x, joy_y):
     right_motor.throttle = r_throttle
     left_motor.throttle = l_throttle
 
+gps_radio_rate = 10
+gps_radio_counter = 0
 def gps_stuff():
-    global current_latitude, current_longitude
+    global current_latitude, current_longitude, gps_radio_counter
     try:
         gps.update()
 
         if not gps.has_fix:
             # print("Waiting for GPS fix...")
-            rfm69.send("gps,bad")
+            if gps_radio_counter >= gps_radio_rate:
+                rfm69.send("gps,bad")
+                gps_radio_counter = 0
+            gps_radio_counter += 1
             return
         # We have a fix! (gps.has_fix is true)
         # Print out details about the fix like location, date, etc.
@@ -161,7 +166,12 @@ def gps_stuff():
         # gps packet
         gps_packet = f"gps,{gps.latitude:.8f},{gps.longitude:.8f},{gps.fix_quality}"
         # print(gps_packet)
-        rfm69.send(gps_packet)
+        
+        if gps_radio_counter >= gps_radio_rate:
+            rfm69.send(gps_packet)
+            gps_radio_counter = 0
+        
+        gps_radio_counter += 1
 
         # print("Longitude: {0:.6f} degrees".format(gps.longitude))
         # print("Fix quality: {}".format(gps.fix_quality))
@@ -304,6 +314,8 @@ def distance_on_unit_sphere(lat1, long1, lat2, long2):
         
 
 def rf_drive(parts):
+    if drive_mode != MODE_JOYSTICK:
+        return
     global joystick_drive_loops_since_rf
     a_x = float(parts[1])
     a_y = float(parts[2])
@@ -318,20 +330,20 @@ def rf_drive(parts):
 
 
 def radio_listen():
-    global max_loops_without_rf_update
+    global max_loops_without_rf_update, drive_mode
     try:
-        packet = rfm69.receive(timeout=0.05) # 1/20 second
+        packet = rfm69.receive(timeout=0.1) # 1/10 second
         if packet is not None:
             packet_text = str(packet, "ascii")
-            # print("Received (ASCII): {0}".format(packet_text))
+            print("Received (ASCII): {0}".format(packet_text))
             parts = packet_text.split(",")
             if parts[0] == "ctl":
                 rf_drive(parts)
             if parts[0] == "mode":
                 drive_mode = parts[1]
                 print("got mode: " + drive_mode)
-                rfm69.send(f"gotmode,{drive_mode}")
-                print("sent gotmode")
+                pixel.fill((128,255,0))
+
 
 
     except Exception as e:
@@ -355,6 +367,11 @@ gps_track = ( # starts in our driveway, drives straight up block, then zigzags b
 )
 
 def gps_drive():
+    pixel.fill((255,0,0))
+
+    if not gps.has_fix:
+        return
+
     global gps_target_index
     target_coords = gps_track[gps_target_index]
     distance = distance_on_unit_sphere(current_latitude, current_longitude, target_coords[0], target_coords[1])
@@ -369,13 +386,16 @@ def gps_drive():
 
 def joystick_drive_killswitch():
     global joystick_drive_loops_since_rf
+    if drive_mode != MODE_JOYSTICK:
+        return
     joystick_drive_loops_since_rf += 1
     if joystick_drive_loops_since_rf > max_loops_without_rf_update:
         print("joystick rf timeout, zeroing")
+        joystick_drive_loops_since_rf = 0
         left_motor.throttle = 0
         right_motor.throttle = 0
 
-while True:
+while True: 
     radio_listen()
     orienteering_stuff()
     gps_stuff()
