@@ -192,10 +192,9 @@ def gps_stuff():
     except Exception as e:
         print("GPS exception")
         print(e)
-    
 
 def orienteering_stuff():
-    global orientation_count, orientation_timestamp, orientation_lastPrint
+    global orientation_count, orientation_timestamp, orientation_lastPrint, current_bearing
     try:
         # on an Feather M4 approx time to wait between readings
         if (time.monotonic_ns() - orientation_timestamp) > 6500000:
@@ -282,7 +281,6 @@ def get_compass_bearing(pointA, pointB):
 
     return compass_bearing
 
-
 def distance_on_unit_sphere(lat1, long1, lat2, long2):
     # Convert latitude and longitude to
     # spherical coordinates in radians.
@@ -311,14 +309,13 @@ def distance_on_unit_sphere(lat1, long1, lat2, long2):
     # Remember to multiply arc by the radius of the earth
     # in your favorite set of units to get length.
     return arc * 20925524.928 # earth radius in feet
-        
 
 def rf_drive(parts):
     if drive_mode != MODE_JOYSTICK:
         return
     global joystick_drive_loops_since_rf
     a_x = float(parts[1])
-    a_y = float(parts[2])
+    a_y = float(parts[2]) 
     # a = int(packet[8:9])
     # b = int(packet[9:10])
     # x = int(packet[10:11])
@@ -327,7 +324,6 @@ def rf_drive(parts):
     pixel.fill((0,a_x*65000,a_y*65000))
     drive_from_joystick(a_x,a_y)
     joystick_drive_loops_since_rf = 0 
-
 
 def radio_listen():
     global max_loops_without_rf_update, drive_mode
@@ -370,10 +366,13 @@ def gps_drive():
     pixel.fill((255,0,0))
 
     if not gps.has_fix:
-        return
+        # return
+        current_latitude = 38.820087
+        current_longitude = -104.865519
 
     global gps_target_index
     target_coords = gps_track[gps_target_index]
+    # print(f"Target: {target_coords[0]}, {target_coords[1]}")
     distance = distance_on_unit_sphere(current_latitude, current_longitude, target_coords[0], target_coords[1])
 
     if distance < gps_target_accuracy:
@@ -382,6 +381,56 @@ def gps_drive():
         distance = distance_on_unit_sphere(current_latitude, current_longitude, target_coords[0], target_coords[1])
 
     bearing_to_target = get_compass_bearing((current_latitude, current_longitude), target_coords)
+
+    print(f"Target Distance: {distance}, Bearing: {bearing_to_target}, Current Bearing: {current_bearing}")
+
+    if abs(current_bearing - bearing_to_target) > 10:
+        turn_in_place_towards_bearing(bearing_to_target)
+    else:
+        drive_towards_bearing(bearing_to_target)
+    
+
+def turn_in_place_towards_bearing(bearing_to_target):
+    difference = bearing_to_target - current_bearing
+
+    print(f"bearing difference: {difference}")
+    # positive right turn, negative left turn
+
+    if difference > 0:
+        right_motor.throttle = -0.8
+        left_motor.throttle = 0.8
+        print("hard right")
+
+    elif difference < 0:
+        right_motor.throttle = 0.8
+        left_motor.throttle = -0.8
+        print("hard left")
+
+
+
+
+    pass
+
+def drive_towards_bearing(bearing_to_target):
+
+    difference = bearing_to_target - current_bearing
+    
+    if abs(difference) < 3:
+        right_motor.throttle = 1
+        left_motor.throttle = 1
+        print("drive straight!")
+        return
+
+    if difference > 0:
+        right_motor.throttle = 0.9
+        left_motor.throttle = 1
+        print("skew right")
+
+    else:
+        right_motor.throttle = 1
+        left_motor.throttle = 0.9
+        print("skew left")
+        
     pass
 
 def joystick_drive_killswitch():

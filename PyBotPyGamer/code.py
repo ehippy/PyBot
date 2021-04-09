@@ -138,7 +138,7 @@ while True:
         if last_sent != spam:
             rfm69.send(spam)
             last_sent = spam
-            # print("Sent " + spam)
+            # print("Sent " + spam) 
         
         if select_btn:
             now = time.monotonic()
